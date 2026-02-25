@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target":           "ES2022",
+    "lib":              ["ES2022", "DOM", "DOM.Iterable"],
+    "module":           "ESNext",
+    "moduleResolution": "bundler",
+    "jsx":              "react-jsx",
+    "strict":           true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "skipLibCheck":     true,
+    "esModuleInterop":  true,
+    "resolveJsonModule": true,
+    "outDir":           "dist",
+    "rootDir":          "src",
+    "paths": {
+      "@core/*":   ["src/crypto/*"],
+      "@store/*":  ["src/store/*"],
+      "@ui/*":     ["src/components/*"]
+    }
+  },
+  "include": ["src", "electron", "tests"],
+  "exclude": ["node_modules", "dist", "dist-electron"]
+}

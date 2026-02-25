@@ -1,0 +1,123 @@
+pragma cashscript ^0.10.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GhostPay SRPA Pool Covenant
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// PURPOSE
+// -------
+// This covenant locks BCH that has been sent to a one-time SRPA address.
+// It enforces three spend rules:
+//
+//   1. spend()       — Normal receiver spend. Checks that the presenter knows
+//                      the spend key corresponding to the SRPA-derived one-time
+//                      pubkey embedded at contract creation time.
+//
+//   2. reclaimAfterTimeout() — Safety valve: sender can reclaim funds if the
+//                      receiver never scans within RECLAIM_LOCKTIME blocks.
+//                      (Optional; can be disabled by setting locktime = MAX_INT)
+//
+//   3. (future)      — A ZK-proof slot reserved for future upgrades. The ABI
+//                      is versioned so a ZK spend can be added without breaking
+//                      existing deposits.
+//
+// DESIGN NOTES
+// ------------
+//  • The ephemeralPubKey is stored as a covenant parameter (in the locking
+//    bytecode). This means every deposit has a *unique* locking script —
+//    exactly what we want so that on-chain analysis cannot link deposits to
+//    a single paycode.
+//
+//  • The covenant stores only the *one-time pubkey hash* (HASH160 of the
+//    one-time pubkey P). The receiver must present P and a valid sig.
+//    The covenant verifies HASH160(presentedPubKey) == storedHash.
+//    This prevents key substitution attacks.
+//
+//  • CashTokens compatibility: fungible/NFT tokens can be forwarded through
+//    this contract untouched. The covenant does not restrict token movement,
+//    which means it can act as a privacy layer for CashTokens too.
+//
+// DEPLOY PARAMETERS (constructor arguments)
+// ------------------------------------------
+//   otaPubKeyHash    bytes20    HASH160 of the one-time SRPA pubkey
+//   ephemeralPubKey  bytes33    Sender's ephemeral public key (for scanner indexing)
+//   reclaimPubKey    bytes33    Sender's public key for reclaim (set 0x00..00 to disable)
+//   reclaimLocktime  int        Absolute block height after which sender can reclaim
+//                               (set to 500000000+ for time-based, or block height)
+// ─────────────────────────────────────────────────────────────────────────────
+
+contract SrpaPool(
+    bytes20 otaPubKeyHash,
+    bytes33 ephemeralPubKey,
+    bytes33 reclaimPubKey,
+    int     reclaimLocktime
+) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // spend()
+    // Receiver presents their one-time private key and proves ownership.
+    //
+    // Parameters:
+    //   receiverSig    — Signature with the one-time private key
+    //   receiverPubKey — The one-time public key P (must hash to otaPubKeyHash)
+    // ─────────────────────────────────────────────────────────────────────────
+    function spend(sig receiverSig, pubkey receiverPubKey) {
+        // Verify that the presented public key is the one locked in the covenant.
+        // This binds the SRPA derivation to the spending proof.
+        require(hash160(receiverPubKey) == otaPubKeyHash,
+            "Presented pubkey does not match locked OTA pubkey hash");
+
+        // Verify the signature
+        require(checkSig(receiverSig, receiverPubKey),
+            "Invalid receiver signature");
+
+        // NOTE: We do NOT restrict the output destination.
+        // The receiver is free to send funds wherever they like.
+        // This is intentional — we want maximum flexibility and
+        // no on-chain pattern that links sender to receiver.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // reclaimAfterTimeout()
+    // Safety valve — sender can reclaim unclaimed funds after N blocks.
+    //
+    // Parameters:
+    //   senderSig — Signature with reclaimPubKey
+    // ─────────────────────────────────────────────────────────────────────────
+    function reclaimAfterTimeout(sig senderSig) {
+        // Ensure reclaim is not disabled (reclaimPubKey == 0x000...000)
+        require(reclaimPubKey != 0x000000000000000000000000000000000000000000000000000000000000000000,
+            "Reclaim is disabled for this deposit");
+
+        // Check that enough time has passed
+        require(tx.locktime >= reclaimLocktime,
+            "Locktime not yet reached");
+        require(tx.sequence >= 0xfffffffe,
+            "Sequence must signal locktime enforcement");
+
+        // Verify sender's reclaim signature
+        require(checkSig(senderSig, reclaimPubKey),
+            "Invalid reclaim signature");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // spendWithToken()
+    // Variant of spend() that also forwards a CashToken (FT or NFT).
+    // Identical spend rules — the token is passed through untouched.
+    //
+    // Parameters:
+    //   receiverSig    — Signature with the one-time private key
+    //   receiverPubKey — The one-time public key P
+    // ─────────────────────────────────────────────────────────────────────────
+    function spendWithToken(sig receiverSig, pubkey receiverPubKey) {
+        require(hash160(receiverPubKey) == otaPubKeyHash,
+            "Presented pubkey does not match locked OTA pubkey hash");
+
+        require(checkSig(receiverSig, receiverPubKey),
+            "Invalid receiver signature");
+
+        // Enforce that token category is forwarded correctly
+        // (CashScript automatically handles token threading in CashTokens outputs)
+        require(tx.outputs[0].tokenCategory == tx.inputs[this.activeInputIndex].tokenCategory,
+            "Token category must be preserved");
+    }
+}

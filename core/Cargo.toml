@@ -1,0 +1,63 @@
+[package]
+name        = "ghostpay-core"
+version     = "0.1.0"
+edition     = "2021"
+description = "GhostPay cryptographic core — SRPA, HD wallet, covenant ABI"
+
+# Compile to both native (for tests) and WASM (for browser/electron)
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default      = ["console_error_panic_hook"]
+post_quantum = []          # Future: enable LM-OTS signer
+
+[dependencies]
+# Secp256k1 — the elliptic curve underlying BCH
+secp256k1     = { version = "0.27", features = ["rand", "serde"] }
+
+# SHA-256, HMAC, RIPEMD-160 for address derivation
+sha2          = "0.10"
+hmac          = "0.12"
+ripemd        = "0.1"
+hkdf          = "0.12"
+
+# BIP-39 mnemonic
+bip39         = "2.0"
+
+# Hex encoding / decoding
+hex           = "0.4"
+
+# Base58Check (paycode encoding)
+bs58          = { version = "0.5", features = ["check"] }
+
+# Serialization
+serde         = { version = "1", features = ["derive"] }
+serde_json    = "1"
+
+# WASM glue
+wasm-bindgen  = "0.2"
+js-sys        = "0.3"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# Secure zeroing of key material in memory
+zeroize       = { version = "1", features = ["derive"] }
+
+# AES-256-GCM for encrypted key storage
+aes-gcm       = "0.10"
+
+# Argon2id KDF for password stretching
+argon2        = "0.5"
+
+# Random number generation (CSPRNG)
+rand          = "0.8"
+getrandom     = { version = "0.2", features = ["js"] }   # WASM entropy
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+hex               = "0.4"
+
+[profile.release]
+opt-level   = "s"    # Minimise WASM bundle size
+lto         = true
+panic       = "abort"
